@@ -64,10 +64,10 @@ async def generate_design(
     with sketch_path.open("wb") as buffer:
         shutil.copyfileobj(image.file, buffer)
 
-    # 2. Call Gemini to generate prompt
+    # 2. Call Gemini to generate prompt (passing the sketch so Gemini can analyze its shape)
     try:
-        instruction = build_gemini_instruction(tones, kansei_words)
-        gemini_prompt = call_gemini_for_prompt(instruction)
+        instruction = build_gemini_instruction(tones, kansei_words, sketch_path=sketch_path)
+        gemini_prompt = call_gemini_for_prompt(instruction, sketch_path=sketch_path)
         llm_prompt = refine_for_image_model(gemini_prompt)
     except Exception as e:
         # Handle various API errors

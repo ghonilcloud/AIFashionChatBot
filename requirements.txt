@@ -12,13 +12,4 @@ transformers
 pillow
 controlnet-aux
 accelerate
-safetensorsfastapi
-uvicorn[standard]
-python-multipart
-Pillow
-torch
-diffusers
-transformers
-accelerate
-controlnet_aux
-xformers
+safetensors
