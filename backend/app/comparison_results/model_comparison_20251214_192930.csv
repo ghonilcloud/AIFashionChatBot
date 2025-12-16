@@ -1,0 +1,3 @@
+timestamp,model,num_inference_steps,guidance_scale,controlnet_conditioning_scale,trial,seed,device,status,total_time_seconds,peak_memory_gb,clip_score,sketch_fidelity_iou,sketch_fidelity_edge_density,error_message
+2025-12-14T19:21:41.300268,sd-v1.5,20,7.5,0.7,1,42,cuda,success,234.5625793999643,7.15971565246582,0.3243090510368347,0.010659698396921158,1.0,
+2025-12-14T19:25:45.597888,ssd-1b,20,7.5,0.7,1,42,cuda,success,222.60680020001018,7.513597011566162,0.3243090510368347,0.010659698396921158,0.0,

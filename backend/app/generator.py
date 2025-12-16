@@ -27,19 +27,23 @@ def build_gemini_instruction(
         f"Your task is to PRESERVE the silhouette and shape of the provided sketch while enhancing it with vibrant styling.\n\n"
         f"Selected tones/style: {tone_clause}\n"
         f"Selected Kansei (sensory/feeling) keywords: {kansei_clause}\n\n"
-        "CRITICAL INSTRUCTIONS:\n"
-        "1. ANALYZE THE SKETCH SHAPE: Examine the uploaded sketch carefully. Identify the garment type, silhouette, sleeve type, hemline, and overall proportions.\n"
-        "2. PRESERVE THE EXACT SILHOUETTE: The generated output MUST maintain the same silhouette, neckline, sleeve shape, and hemline as the uploaded sketch.\n"
-        "3. RENDER WITH STYLE: Create a vibrant, well-rendered fashion design that applies the selected tones and Kansei through:\n"
-        "   - Rich, appropriate color palettes that match the tones (e.g., 'Elegant' = sophisticated colors, 'Vibrant' = bold colors)\n"
-        "   - Fabric textures and finishes (silk, cotton, structured, fluid, etc.)\n"
-        "   - Realistic material appearance while keeping artistic clarity\n"
-        "4. Output format: Produce a single, compact image-generation prompt (3-4 sentences) that describes:\n"
-        "   - The EXACT silhouette, neckline, sleeves, and fit of the sketch\n"
-        "   - The garment type and overall impression\n"
-        "   - A rich color palette and fabric suggestions aligned with the tones/Kansei\n"
-        "   - Details like draping, seams, textures, embellishments that enhance the style\n"
-        "5. Visual style: Fashion illustration with realistic rendering, rich colors, artistic but wearable aesthetic.\n"
+        f"CRITICAL - READ CAREFULLY:\n"
+        f"1. ANALYZE THE CLOTHING OUTLINE: Examine the uploaded sketch. Identify EXACT clothing features:\n"
+        f"   - Neckline shape (round, V-neck, square, etc.)\n"
+        f"   - Sleeve type and length (sleeveless, short, long, puffed, etc.)\n"
+        f"   - Hemline and length (mini, knee, midi, maxi, etc.)\n"
+        f"   - Overall silhouette (A-line, straight, fitted, etc.)\n"
+        f"   - Any unique clothing features (straps, buckles, pockets, belts, etc.)\n"
+        f"\n2. FOCUS ON CLOTHING ONLY - Do NOT describe human body features (face, hair, skin, body shape, etc.)\n"
+        f"   Only describe the garment itself and how it fits.\n"
+        f"\n3. OUTPUT FORMAT - Generate a SHORT, DENSE prompt (MUST be under 75 words):\n"
+        f"   - Start with: '[PRESERVE OUTLINE] <garment type>'\n"
+        f"   - Specify EXACT neckline, sleeves, hemline from sketch\n"
+        f"   - Add rich color palette matching tones/Kansei\n"
+        f"   - Add fabric and texture details\n"
+        f"   - NO human features or body description\n"
+        f"\n4. STRICT RULE: Never change the clothing outline. Only enhance with colors, textures, and garment details.\n"
+        f"   Your prompt MUST keep the exact same shape as the uploaded sketch.\n"
     )
 
     return instructions
@@ -78,13 +82,59 @@ def call_gemini_for_prompt(instruction: str, sketch_path: str | Path = None, mod
 
 
 def refine_for_image_model(gemini_text: str) -> str:
-    """Optionally transform the Gemini output into a final image prompt for the image model.
-
-    Appends rendering and quality instructions to produce vibrant, high-quality fashion designs.
+    """Transform Gemini output into a CLIP-compatible prompt (max 77 tokens).
+    
+    CLIP tokenizer max: 77 tokens. Prompt is truncated to fit while preserving
+    essential silhouette and style information.
+    
+    Appends rendering and quality instructions to produce vibrant, high-quality fashion designs
+    with solid background for clear clothing visibility.
     """
-    suffix = (
-        "\n--rendering: fashion illustration with realistic fabric textures and rich colors; "
-        "artistic but wearable aesthetic; professional fashion design quality; "
-        "maintain sketch silhouette exactly; vibrant and well-lit; focus on garment appeal and style."
-    )
-    return gemini_text.strip() + suffix
+    try:
+        from transformers import CLIPTokenizer
+        tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+        
+        # Start with the Gemini text
+        base_prompt = gemini_text.strip()
+        
+        # Add strict silhouette preservation directive
+        silhouette_directive = "[PRESERVE EXACT SKETCH SILHOUETTE]"
+        
+        # Add background instruction to differentiate clothing
+        background_instruction = "solid neutral gray background"
+        
+        # Combine prompt
+        full_prompt = f"{silhouette_directive} {base_prompt} {background_instruction}"
+        
+        # Tokenize and check length
+        tokens = tokenizer.tokenize(full_prompt)
+        
+        # If over 77 tokens, truncate Gemini text while keeping directives
+        if len(tokens) > 77:
+            # Keep silhouette directive and background (always at end)
+            directive_tokens = len(tokenizer.tokenize(f"{silhouette_directive} {background_instruction}"))
+            remaining_tokens = 77 - directive_tokens - 2
+            
+            # Truncate Gemini text to fit
+            gemini_tokens = tokenizer.tokenize(base_prompt)
+            if len(gemini_tokens) > remaining_tokens:
+                gemini_tokens = gemini_tokens[:remaining_tokens]
+                base_prompt = tokenizer.convert_tokens_to_string(gemini_tokens)
+        
+        final_prompt = f"{silhouette_directive} {base_prompt} {background_instruction}"
+        
+        # Verify final token count
+        final_tokens = tokenizer.tokenize(final_prompt)
+        print(f"[PROMPT] Token count: {len(final_tokens)}/77 (CLIP compatible)")
+        
+        return final_prompt
+        
+    except ImportError:
+        # Fallback if CLIPTokenizer not available - simple word-based truncation
+        print("[WARNING] CLIPTokenizer not available, using word-based truncation")
+        words = gemini_text.strip().split()
+        if len(words) > 50:  # Conservative estimate for background instruction
+            words = words[:50]
+        
+        final_prompt = "[PRESERVE EXACT SKETCH SILHOUETTE] " + " ".join(words) + " solid neutral gray background"
+        return final_prompt

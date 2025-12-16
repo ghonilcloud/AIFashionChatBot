@@ -68,6 +68,77 @@ def load_pipeline(
     return pipe
 
 
+def load_sdxl_pipeline():
+    """
+    Load Stable Diffusion XL 1.0 + ControlNet pipeline.
+    Note: SDXL is larger (~7GB+), uses more memory than SD v1.5
+    """
+    from diffusers import StableDiffusionXLControlNetPipeline
+    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    
+    # Use Canny ControlNet that's compatible with SDXL
+    controlnet = ControlNetModel.from_pretrained(
+        "diffusers/controlnet-canny-sdxl-1.0",
+        torch_dtype=dtype,
+        use_auth_token=os.environ.get("HUGGINGFACE_TOKEN"),
+    )
+    
+    pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
+        "stabilityai/stable-diffusion-xl-base-1.0",
+        controlnet=controlnet,
+        torch_dtype=dtype,
+        use_auth_token=os.environ.get("HUGGINGFACE_TOKEN"),
+    )
+    
+    pipe = pipe.to(device)
+    
+    if device == "cuda":
+        pipe.enable_attention_slicing()
+        try:
+            pipe.enable_xformers_memory_efficient_attention()
+        except Exception:
+            pass
+    
+    return pipe
+
+
+def load_segmind_pipeline():
+    """
+    Load Segmind SSD-1B (lightweight, fast alternative to SD v1.5).
+    ~1B parameters, ~4-5x faster than SD v1.5, good quality for light compute.
+    """
+    from diffusers import StableDiffusionControlNetPipeline
+    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    
+    controlnet = ControlNetModel.from_pretrained(
+        "lllyasviel/sd-controlnet-canny",  # Use standard canny ControlNet
+        torch_dtype=dtype,
+        use_auth_token=os.environ.get("HUGGINGFACE_TOKEN"),
+    )
+    
+    pipe = StableDiffusionControlNetPipeline.from_pretrained(
+        "segmind/SSD-1B",
+        controlnet=controlnet,
+        torch_dtype=dtype,
+        use_auth_token=os.environ.get("HUGGINGFACE_TOKEN"),
+    )
+    
+    pipe = pipe.to(device)
+    
+    if device == "cuda":
+        pipe.enable_attention_slicing()
+        try:
+            pipe.enable_xformers_memory_efficient_attention()
+        except Exception:
+            pass
+    
+    return pipe
+
+
 def preprocess_sketch(sketch_path: str | Path) -> Image.Image:
     """
     Preprocess CAD sketch:
@@ -90,6 +161,7 @@ def generate_fashion_design(
     controlnet_conditioning_scale: float = 1.0,
     negative_prompt: str = "blurry, low quality, distorted, ugly, bad anatomy",
     seed: int = None,
+    pipe=None,
 ) -> str:
     """
     Generate a fashion design using Stable Diffusion + ControlNet.
@@ -117,10 +189,11 @@ def generate_fashion_design(
     
     # Preprocess sketch
     sketch = preprocess_sketch(sketch_path)
-    
-    # Load pipeline (or reuse from cache if available)
-    pipe = load_pipeline()
-    
+
+    # Use provided pipeline or load default
+    if pipe is None:
+        pipe = load_pipeline()
+
     # Generate
     device = "cuda" if torch.cuda.is_available() else "cpu"
     with torch.no_grad() if device == "cuda" else torch.inference_mode():
@@ -133,12 +206,12 @@ def generate_fashion_design(
             negative_prompt=negative_prompt,
             generator=generator,
         ).images[0]
-    
+
     # Save
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path)
-    
+
     return str(output_path)
 
 
