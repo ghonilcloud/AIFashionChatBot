@@ -32,6 +32,11 @@ try:
 except ImportError:
     open_clip = None
 
+try:
+    import lpips
+except ImportError:
+    lpips = None
+
 
 class SketchFidelityMetric:
     """Compute how well the generated image preserves the original sketch outline."""
@@ -128,6 +133,15 @@ class ModelComparisonRunner:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.process = psutil.Process()
         
+        # Initialize LPIPS model once for reuse
+        self.lpips_model = None
+        if lpips is not None:
+            try:
+                self.lpips_model = lpips.LPIPS(net='alex').to(self.device)
+                self.lpips_model.eval()
+            except Exception as e:
+                print(f"[WARNING] Failed to initialize LPIPS model: {e}")
+        
     def measure_memory_start(self) -> float:
         """Get initial memory usage."""
         torch.cuda.reset_peak_memory_stats() if self.device == "cuda" else None
@@ -173,6 +187,46 @@ class ModelComparisonRunner:
         
         except Exception as e:
             print(f"[WARNING] CLIP score computation failed: {e}")
+            return 0.0
+    
+    def compute_lpips_score(self, sketch_path: str | Path, generated_path: str | Path) -> float:
+        """Compute LPIPS perceptual similarity between sketch and generated image.
+        
+        Returns score from 0-1 where:
+        - 0.0 = perceptually identical
+        - 1.0 = perceptually very different
+        
+        Lower is better for sketch preservation.
+        """
+        if self.lpips_model is None:
+            print("[WARNING] LPIPS model not available")
+            return 0.0
+        
+        try:
+            from torchvision import transforms
+            
+            # LPIPS expects [-1, 1] normalized RGB images
+            transform = transforms.Compose([
+                transforms.Resize((256, 256)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+            ])
+            
+            # Load and preprocess images
+            sketch_img = Image.open(sketch_path).convert('RGB')
+            gen_img = Image.open(generated_path).convert('RGB')
+            
+            sketch_tensor = transform(sketch_img).unsqueeze(0).to(self.device)
+            gen_tensor = transform(gen_img).unsqueeze(0).to(self.device)
+            
+            # Compute LPIPS distance
+            with torch.no_grad():
+                distance = self.lpips_model(sketch_tensor, gen_tensor)
+            
+            return float(distance.item())
+        
+        except Exception as e:
+            print(f"[WARNING] LPIPS computation failed: {e}")
             return 0.0
     
     def run_single_generation(
@@ -227,6 +281,7 @@ class ModelComparisonRunner:
             "clip_score": 0.0,
             "sketch_fidelity_iou": 0.0,
             "sketch_fidelity_edge_density": 0.0,
+            "lpips_score": 0.0,
         }
         
         try:
@@ -256,6 +311,7 @@ class ModelComparisonRunner:
             clip_score = self.compute_clip_score(prompt, output_path)
             fidelity_iou = SketchFidelityMetric.compute_edge_overlap(self.sketch_path, output_path)
             fidelity_density = SketchFidelityMetric.compute_edge_density_match(self.sketch_path, output_path)
+            lpips_score = self.compute_lpips_score(self.sketch_path, output_path)
             
             result.update({
                 "status": "success",
@@ -264,9 +320,10 @@ class ModelComparisonRunner:
                 "clip_score": clip_score,
                 "sketch_fidelity_iou": fidelity_iou,
                 "sketch_fidelity_edge_density": fidelity_density,
+                "lpips_score": lpips_score,
             })
             
-            print(f"✓ {model_name} (steps={num_inference_steps}, guidance={guidance_scale}) - {end_time - start_time:.2f}s, {clip_score:.4f} CLIP, {fidelity_iou:.4f} fidelity")
+            print(f"✓ {model_name} (steps={num_inference_steps}, guidance={guidance_scale}) - {end_time - start_time:.2f}s, {clip_score:.4f} CLIP, {fidelity_iou:.4f} fidelity, {lpips_score:.4f} LPIPS")
         
         except Exception as e:
             result["status"] = "failed"
@@ -349,7 +406,7 @@ class ModelComparisonRunner:
         fieldnames = [
             "timestamp", "model", "num_inference_steps", "guidance_scale", "controlnet_conditioning_scale",
             "trial", "seed", "device", "status", "total_time_seconds", "peak_memory_gb",
-            "clip_score", "sketch_fidelity_iou", "sketch_fidelity_edge_density", "error_message"
+            "clip_score", "sketch_fidelity_iou", "sketch_fidelity_edge_density", "lpips_score", "error_message"
         ]
         
         try:
@@ -393,6 +450,7 @@ class ModelComparisonRunner:
             memories = [r["peak_memory_gb"] for r in successful]
             clip_scores = [r["clip_score"] for r in successful]
             fidelities = [r["sketch_fidelity_iou"] for r in successful]
+            lpips_scores = [r["lpips_score"] for r in successful]
             
             print(f"\n{model.upper()} ({len(successful)}/{len(results)} successful)")
             print(f"  Inference Time:")
@@ -403,5 +461,7 @@ class ModelComparisonRunner:
             print(f"    Min: {min(clip_scores):.4f}, Max: {max(clip_scores):.4f}, Mean: {np.mean(clip_scores):.4f}")
             print(f"  Sketch Fidelity (IoU):")
             print(f"    Min: {min(fidelities):.4f}, Max: {max(fidelities):.4f}, Mean: {np.mean(fidelities):.4f}")
+            print(f"  LPIPS Score (lower=better):")
+            print(f"    Min: {min(lpips_scores):.4f}, Max: {max(lpips_scores):.4f}, Mean: {np.mean(lpips_scores):.4f}")
         
         print("\n" + "="*80)

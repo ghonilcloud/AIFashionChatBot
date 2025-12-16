@@ -16,3 +16,4 @@ safetensors
 open-clip-torch
 psutil
 opencv-python
+lpips
