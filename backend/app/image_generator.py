@@ -106,21 +106,23 @@ def load_sdxl_pipeline():
 
 def load_segmind_pipeline():
     """
-    Load Segmind SSD-1B (lightweight, fast alternative to SD v1.5).
-    ~1B parameters, ~4-5x faster than SD v1.5, good quality for light compute.
+    Load Segmind SSD-1B (lightweight, fast alternative to SDXL).
+    ~1B parameters, based on SDXL architecture, ~4-5x faster than SDXL.
+    Note: SSD-1B uses SDXL architecture and requires SDXL-compatible ControlNet.
     """
-    from diffusers import StableDiffusionControlNetPipeline
+    from diffusers import StableDiffusionXLControlNetPipeline
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
     
+    # Use SDXL-compatible ControlNet (SSD-1B is based on SDXL)
     controlnet = ControlNetModel.from_pretrained(
-        "lllyasviel/sd-controlnet-canny",  # Use standard canny ControlNet
+        "diffusers/controlnet-canny-sdxl-1.0",
         torch_dtype=dtype,
         use_auth_token=os.environ.get("HUGGINGFACE_TOKEN"),
     )
     
-    pipe = StableDiffusionControlNetPipeline.from_pretrained(
+    pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
         "segmind/SSD-1B",
         controlnet=controlnet,
         torch_dtype=dtype,

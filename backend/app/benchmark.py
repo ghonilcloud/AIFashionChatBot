@@ -42,6 +42,14 @@ def run_single_test(sketch_path: str, prompt: str, output_dir: str = "benchmark_
     print("SINGLE TEST MODE")
     print("="*70)
     
+    # Generate prompt using LLM if not provided
+    if prompt == "A fashionable garment with vibrant colors, detailed seams, and professional tailoring. Realistic fabric textures. Solid neutral gray background.":
+        print("Generating prompt using Gemini LLM...")
+        instruction = build_gemini_instruction(["Elegant"], ["Tailored", "Structured"], sketch_path=sketch_path)
+        gemini_prompt = call_gemini_for_prompt(instruction, sketch_path=sketch_path)
+        prompt = refine_for_image_model(gemini_prompt)
+        print(f"Generated prompt: {prompt[:80]}...\n")
+    
     runner = ModelComparisonRunner(sketch_path=sketch_path, output_dir=output_dir)
     
     result = runner.run_single_generation(
@@ -68,6 +76,14 @@ def run_full_comparison(sketch_path: str, prompt: str, models: list, steps: list
     print("\n" + "="*70)
     print("FULL MODEL COMPARISON MODE")
     print("="*70)
+    
+    # Generate prompt using LLM if not provided
+    if prompt == "A fashionable garment with vibrant colors, detailed seams, and professional tailoring. Realistic fabric textures. Solid neutral gray background.":
+        print("Generating prompt using Gemini LLM...")
+        instruction = build_gemini_instruction(["Elegant"], ["Tailored", "Structured"], sketch_path=sketch_path)
+        gemini_prompt = call_gemini_for_prompt(instruction, sketch_path=sketch_path)
+        prompt = refine_for_image_model(gemini_prompt)
+        print(f"Generated prompt: {prompt[:80]}...\n")
     
     runner = ModelComparisonRunner(sketch_path=sketch_path, output_dir=output_dir)
     
@@ -207,7 +223,7 @@ Examples:
         "--prompt",
         type=str,
         default="A fashionable garment with vibrant colors, detailed seams, and professional tailoring. Realistic fabric textures. Solid neutral gray background.",
-        help="Text prompt for generation (not used in --llm-benchmark mode)"
+        help="Text prompt for generation. If not specified, Gemini will generate one based on 'Elegant + Tailored + Structured' (not used in --llm-benchmark mode)"
     )
     
     parser.add_argument(
@@ -230,16 +246,16 @@ Examples:
         "--guidance",
         type=float,
         nargs="+",
-        default=[7.5, 10.0],
-        help="Guidance scales to test (default: 7.5 10.0)"
+        default=[7.5],
+        help="Guidance scales to test (default: 7.5)"
     )
     
     parser.add_argument(
         "--conditioning",
         type=float,
         nargs="+",
-        default=[0.7, 1.0],
-        help="ControlNet conditioning scales (default: 0.7 1.0)"
+        default=[1.0],
+        help="ControlNet conditioning scales (default: 1.0)"
     )
     
     parser.add_argument(
